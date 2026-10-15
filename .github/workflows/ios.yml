@@ -44,7 +44,7 @@ jobs:
         run: |
           if [ "${{ inputs.app }}" = "mahalle-abisi" ]; then echo "s=MA" >> $GITHUB_OUTPUT; else echo "s=YS" >> $GITHUB_OUTPUT; fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: kaankapucuoglu/${{ inputs.app }}
           ref: ${{ inputs.ref }}
@@ -59,7 +59,7 @@ jobs:
           sudo xcode-select -s "$X/Contents/Developer"
           xcodebuild -version
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 
