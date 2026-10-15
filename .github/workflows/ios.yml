@@ -1,0 +1,101 @@
+# iOS derleyici (açık depo: GitHub'ın macOS dakikası açık depolarda ücretsiz).
+# Oyun kodu gizli depodan salt-okunur deploy key ile çekilir; bu depoda kod / imza / .ipa YOK.
+# .ipa artifact olarak yüklenmez (açık depoda herkes indirebilirdi) → doğrudan App Store Connect'e gider.
+# Başlat: gh workflow run ios.yml -R kaankapucuoglu/ios-builder -f app=yaratik-savasi
+# Gizli anahtarlar: EXPO_TOKEN, IOS_P12_BASE64, IOS_P12_PASSWORD, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_BASE64,
+#   DEPLOY_KEY_YS / DEPLOY_KEY_MA (ssh özel anahtar), PROFILE_YS / PROFILE_MA (mobileprovision base64)
+name: iOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: "Oyun"
+        type: choice
+        options: [yaratik-savasi, mahalle-abisi]
+        default: yaratik-savasi
+      ref:
+        description: "Dal / commit"
+        type: string
+        default: master
+      upload:
+        description: "App Store Connect'e yükle"
+        type: boolean
+        default: true
+      runner:
+        description: "macOS makinesi"
+        type: string
+        default: macos-26
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # yalnız depo sahibi başlatabilir (açık depo: başkasının tetiklemesi / fork'u gizli anahtarlara erişemez)
+    if: github.actor == github.repository_owner
+    runs-on: ${{ inputs.runner || 'macos-26' }}
+    timeout-minutes: 90
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - name: Anahtar seç
+        id: k
+        run: |
+          if [ "${{ inputs.app }}" = "mahalle-abisi" ]; then echo "s=MA" >> $GITHUB_OUTPUT; else echo "s=YS" >> $GITHUB_OUTPUT; fi
+
+      - uses: actions/checkout@v4
+        with:
+          repository: kaankapucuoglu/${{ inputs.app }}
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ steps.k.outputs.s == 'MA' && secrets.DEPLOY_KEY_MA || secrets.DEPLOY_KEY_YS }}
+          path: app
+          persist-credentials: false
+
+      - name: Xcode 26 seç
+        run: |
+          X=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -v -i beta | sort -V | tail -1)
+          if [ -z "$X" ]; then echo "Xcode 26 yok"; ls /Applications | grep Xcode; exit 1; fi
+          sudo xcode-select -s "$X/Contents/Developer"
+          xcodebuild -version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Bağımlılıklar
+        working-directory: app
+        run: |
+          npm ci --no-audit --no-fund --loglevel=error
+          npm i -g eas-cli@latest --loglevel=error
+
+      - name: İmza dosyaları
+        working-directory: app
+        env:
+          P12: ${{ secrets.IOS_P12_BASE64 }}
+          P12_PASS: ${{ secrets.IOS_P12_PASSWORD }}
+          PROF: ${{ steps.k.outputs.s == 'MA' && secrets.PROFILE_MA || secrets.PROFILE_YS }}
+        run: |
+          mkdir -p ci-creds
+          echo "$P12" | base64 --decode > ci-creds/dist.p12
+          echo "$PROF" | base64 --decode > ci-creds/profile.mobileprovision
+          node -e 'require("fs").writeFileSync("credentials.json", JSON.stringify({ios:{provisioningProfilePath:"ci-creds/profile.mobileprovision",distributionCertificate:{path:"ci-creds/dist.p12",password:process.env.P12_PASS}}}))'
+
+      - name: Derle (eas build --local)
+        working-directory: app
+        run: eas build -p ios --profile production --local --non-interactive --output "$GITHUB_WORKSPACE/app.ipa"
+
+      - name: App Store Connect'e yükle
+        if: ${{ inputs.upload }}
+        env:
+          KID: ${{ secrets.ASC_KEY_ID }}
+          ISS: ${{ secrets.ASC_ISSUER_ID }}
+          P8: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          mkdir -p ~/private_keys
+          echo "$P8" | base64 --decode > ~/private_keys/AuthKey_$KID.p8
+          xcrun altool --upload-app -f "$GITHUB_WORKSPACE/app.ipa" -t ios --apiKey "$KID" --apiIssuer "$ISS"
+
+      - name: Temizlik
+        if: always()
+        run: rm -rf app/ci-creds app/credentials.json ~/private_keys "$GITHUB_WORKSPACE/app.ipa"
