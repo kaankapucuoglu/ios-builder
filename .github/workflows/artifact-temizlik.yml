@@ -1,0 +1,42 @@
+# Actions depolama kotası koruması (16.10.2026: "%90 storage" maili).
+# Ücretsiz planda 0,5 GB-ay depolama yalnız GİZLİ depolar için sayılır; eski iOS iş akışlarının
+# yüklediği .ipa artifact'leri (~110-130 MB, 7 gün) kotayı doldurmuştu. Bu iş akışı her gün sahip olunan
+# gizli depolardaki 24 saatten eski artifact'leri siler. Açık depo → dakika ücretsiz, bu depo kotaya girmez.
+# Gizli anahtar: CLEANUP_TOKEN (repo kapsamlı PAT). Elle: gh workflow run artifact-temizlik.yml -R kaankapucuoglu/ios-builder
+name: Artifact temizlik
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # her gün 09:00 (TR, UTC+3)
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  temizlik:
+    # zamanlayıcı ya da yalnız depo sahibi (açık depo)
+    if: github.event_name == 'schedule' || github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.CLEANUP_TOKEN }}
+    steps:
+      - name: Gizli depolardaki 24 saatten eski artifact'leri sil
+        run: |
+          set -euo pipefail
+          cutoff=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          i=0; toplam=0
+          # loglar herkese açık: depo adı basılmaz, yalnız sayılar
+          for repo in $(gh api 'user/repos?visibility=private&affiliation=owner&per_page=100' --jq '.[].full_name'); do
+            i=$((i+1)); n=0; mb=0
+            while read -r id size; do
+              [ -z "$id" ] && continue
+              gh api -X DELETE "repos/$repo/actions/artifacts/$id" >/dev/null
+              n=$((n+1)); mb=$((mb + size/1048576))
+            done < <(gh api "repos/$repo/actions/artifacts?per_page=100" \
+                       --jq ".artifacts[] | select(.expired == false and .created_at < \"$cutoff\") | \"\(.id) \(.size_in_bytes)\"")
+            kalan=$(gh api "repos/$repo/actions/artifacts" --jq '.total_count')
+            echo "gizli depo #$i: silinen=$n (${mb} MB), kalan=$kalan"
+            toplam=$((toplam+n))
+          done
+          echo "Toplam $i gizli depo, $toplam artifact silindi."
