@@ -3,7 +3,7 @@
 # .ipa artifact olarak yüklenmez (açık depoda herkes indirebilirdi) → doğrudan App Store Connect'e gider.
 # Başlat: gh workflow run ios.yml -R kaankapucuoglu/ios-builder -f app=yaratik-savasi
 # Gizli anahtarlar: EXPO_TOKEN, IOS_P12_BASE64, IOS_P12_PASSWORD, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_BASE64,
-#   DEPLOY_KEY_YS / DEPLOY_KEY_MA (ssh özel anahtar), PROFILE_YS / PROFILE_MA (mobileprovision base64)
+#   DEPLOY_KEY_YS / DEPLOY_KEY_MA / DEPLOY_KEY_SL (ssh özel anahtar), PROFILE_YS / PROFILE_MA / PROFILE_SL (mobileprovision base64)
 name: iOS
 
 on:
@@ -12,7 +12,7 @@ on:
       app:
         description: "Oyun"
         type: choice
-        options: [yaratik-savasi, mahalle-abisi]
+        options: [yaratik-savasi, mahalle-abisi, sliplines]
         default: yaratik-savasi
       ref:
         description: "Dal / commit"
@@ -42,13 +42,17 @@ jobs:
       - name: Anahtar seç
         id: k
         run: |
-          if [ "${{ inputs.app }}" = "mahalle-abisi" ]; then echo "s=MA" >> $GITHUB_OUTPUT; else echo "s=YS" >> $GITHUB_OUTPUT; fi
+          case "${{ inputs.app }}" in
+            mahalle-abisi) echo "s=MA" >> $GITHUB_OUTPUT ;;
+            sliplines) echo "s=SL" >> $GITHUB_OUTPUT ;;
+            *) echo "s=YS" >> $GITHUB_OUTPUT ;;
+          esac
 
       - uses: actions/checkout@v5
         with:
           repository: kaankapucuoglu/${{ inputs.app }}
           ref: ${{ inputs.ref }}
-          ssh-key: ${{ steps.k.outputs.s == 'MA' && secrets.DEPLOY_KEY_MA || secrets.DEPLOY_KEY_YS }}
+          ssh-key: ${{ steps.k.outputs.s == 'MA' && secrets.DEPLOY_KEY_MA || (steps.k.outputs.s == 'SL' && secrets.DEPLOY_KEY_SL || secrets.DEPLOY_KEY_YS) }}
           path: app
           persist-credentials: false
 
@@ -74,7 +78,7 @@ jobs:
         env:
           P12: ${{ secrets.IOS_P12_BASE64 }}
           P12_PASS: ${{ secrets.IOS_P12_PASSWORD }}
-          PROF: ${{ steps.k.outputs.s == 'MA' && secrets.PROFILE_MA || secrets.PROFILE_YS }}
+          PROF: ${{ steps.k.outputs.s == 'MA' && secrets.PROFILE_MA || (steps.k.outputs.s == 'SL' && secrets.PROFILE_SL || secrets.PROFILE_YS) }}
         run: |
           mkdir -p ci-creds
           echo "$P12" | base64 --decode > ci-creds/dist.p12
