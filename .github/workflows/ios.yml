@@ -12,7 +12,7 @@ on:
       app:
         description: "Oyun"
         type: choice
-        options: [yaratik-savasi, mahalle-abisi, sliplines]
+        options: [yaratik-savasi, mahalle-abisi, sliplines, parkout, slipblocks]
         default: yaratik-savasi
       ref:
         description: "Dal / commit"
@@ -45,6 +45,8 @@ jobs:
           case "${{ inputs.app }}" in
             mahalle-abisi) echo "s=MA" >> $GITHUB_OUTPUT ;;
             sliplines) echo "s=SL" >> $GITHUB_OUTPUT ;;
+            parkout) echo "s=PO" >> $GITHUB_OUTPUT ;;
+            slipblocks) echo "s=SB" >> $GITHUB_OUTPUT ;;
             *) echo "s=YS" >> $GITHUB_OUTPUT ;;
           esac
 
@@ -52,7 +54,7 @@ jobs:
         with:
           repository: kaankapucuoglu/${{ inputs.app }}
           ref: ${{ inputs.ref }}
-          ssh-key: ${{ steps.k.outputs.s == 'MA' && secrets.DEPLOY_KEY_MA || (steps.k.outputs.s == 'SL' && secrets.DEPLOY_KEY_SL || secrets.DEPLOY_KEY_YS) }}
+          ssh-key: ${{ steps.k.outputs.s == 'MA' && secrets.DEPLOY_KEY_MA || (steps.k.outputs.s == 'SL' && secrets.DEPLOY_KEY_SL || (steps.k.outputs.s == 'PO' && secrets.DEPLOY_KEY_PO || (steps.k.outputs.s == 'SB' && secrets.DEPLOY_KEY_SB || secrets.DEPLOY_KEY_YS))) }}
           path: app
           persist-credentials: false
 
@@ -78,7 +80,7 @@ jobs:
         env:
           P12: ${{ secrets.IOS_P12_BASE64 }}
           P12_PASS: ${{ secrets.IOS_P12_PASSWORD }}
-          PROF: ${{ steps.k.outputs.s == 'MA' && secrets.PROFILE_MA || (steps.k.outputs.s == 'SL' && secrets.PROFILE_SL || secrets.PROFILE_YS) }}
+          PROF: ${{ steps.k.outputs.s == 'MA' && secrets.PROFILE_MA || (steps.k.outputs.s == 'SL' && secrets.PROFILE_SL || (steps.k.outputs.s == 'PO' && secrets.PROFILE_PO || (steps.k.outputs.s == 'SB' && secrets.PROFILE_SB || secrets.PROFILE_YS))) }}
         run: |
           mkdir -p ci-creds
           echo "$P12" | base64 --decode > ci-creds/dist.p12
