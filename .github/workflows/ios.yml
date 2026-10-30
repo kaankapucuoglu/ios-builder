@@ -1,9 +1,10 @@
 # iOS derleyici (açık depo: GitHub'ın macOS dakikası açık depolarda ücretsiz).
 # Oyun kodu gizli depodan salt-okunur deploy key ile çekilir; bu depoda kod / imza / .ipa YOK.
 # .ipa artifact olarak yüklenmez (açık depoda herkes indirebilirdi) → doğrudan App Store Connect'e gider.
-# Başlat: gh workflow run ios.yml -R kaankapucuoglu/ios-builder -f app=yaratik-savasi
+# Başlat: gh workflow run ios.yml -R kaankapucuoglu/ios-builder -f app=mahalle-abisi
+# 31.10.2026: Demir Tabur (yaratik-savasi) Apple dağıtımından çıkarıldı (4.3 ret) → seçenek, DEPLOY_KEY_YS ve PROFILE_YS kaldırıldı.
 # Gizli anahtarlar: EXPO_TOKEN, IOS_P12_BASE64, IOS_P12_PASSWORD, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_BASE64,
-#   DEPLOY_KEY_YS / DEPLOY_KEY_MA / DEPLOY_KEY_SL (ssh özel anahtar), PROFILE_YS / PROFILE_MA / PROFILE_SL (mobileprovision base64)
+#   DEPLOY_KEY_MA / DEPLOY_KEY_SL / DEPLOY_KEY_PO / DEPLOY_KEY_SB (ssh özel anahtar), PROFILE_MA / PROFILE_SL / PROFILE_PO / PROFILE_SB (mobileprovision base64)
 name: iOS
 
 on:
@@ -12,8 +13,8 @@ on:
       app:
         description: "Oyun"
         type: choice
-        options: [yaratik-savasi, mahalle-abisi, sliplines, parkout, slipblocks]
-        default: yaratik-savasi
+        options: [mahalle-abisi, sliplines, parkout, slipblocks]
+        default: mahalle-abisi
       ref:
         description: "Dal / commit"
         type: string
@@ -47,14 +48,14 @@ jobs:
             sliplines) echo "s=SL" >> $GITHUB_OUTPUT ;;
             parkout) echo "s=PO" >> $GITHUB_OUTPUT ;;
             slipblocks) echo "s=SB" >> $GITHUB_OUTPUT ;;
-            *) echo "s=YS" >> $GITHUB_OUTPUT ;;
+            *) echo "Bu oyun iOS derlemesine kapalı: ${{ inputs.app }}"; exit 1 ;;
           esac
 
       - uses: actions/checkout@v5
         with:
           repository: kaankapucuoglu/${{ inputs.app }}
           ref: ${{ inputs.ref }}
-          ssh-key: ${{ steps.k.outputs.s == 'MA' && secrets.DEPLOY_KEY_MA || (steps.k.outputs.s == 'SL' && secrets.DEPLOY_KEY_SL || (steps.k.outputs.s == 'PO' && secrets.DEPLOY_KEY_PO || (steps.k.outputs.s == 'SB' && secrets.DEPLOY_KEY_SB || secrets.DEPLOY_KEY_YS))) }}
+          ssh-key: ${{ steps.k.outputs.s == 'MA' && secrets.DEPLOY_KEY_MA || (steps.k.outputs.s == 'SL' && secrets.DEPLOY_KEY_SL || (steps.k.outputs.s == 'PO' && secrets.DEPLOY_KEY_PO || (steps.k.outputs.s == 'SB' && secrets.DEPLOY_KEY_SB || ''))) }}
           path: app
           persist-credentials: false
 
@@ -80,7 +81,7 @@ jobs:
         env:
           P12: ${{ secrets.IOS_P12_BASE64 }}
           P12_PASS: ${{ secrets.IOS_P12_PASSWORD }}
-          PROF: ${{ steps.k.outputs.s == 'MA' && secrets.PROFILE_MA || (steps.k.outputs.s == 'SL' && secrets.PROFILE_SL || (steps.k.outputs.s == 'PO' && secrets.PROFILE_PO || (steps.k.outputs.s == 'SB' && secrets.PROFILE_SB || secrets.PROFILE_YS))) }}
+          PROF: ${{ steps.k.outputs.s == 'MA' && secrets.PROFILE_MA || (steps.k.outputs.s == 'SL' && secrets.PROFILE_SL || (steps.k.outputs.s == 'PO' && secrets.PROFILE_PO || (steps.k.outputs.s == 'SB' && secrets.PROFILE_SB || ''))) }}
         run: |
           mkdir -p ci-creds
           echo "$P12" | base64 --decode > ci-creds/dist.p12
