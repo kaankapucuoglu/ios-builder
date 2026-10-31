@@ -1,24 +1,26 @@
 # iOS derleyici (açık depo: GitHub'ın macOS dakikası açık depolarda ücretsiz).
-# Oyun kodu gizli depodan salt-okunur deploy key ile çekilir; bu depoda kod / imza / .ipa YOK.
+# Uygulama kodu gizli depodan salt-okunur deploy key ile çekilir (açık depo için anahtar gerekmez: lifefit); bu depoda kod / imza / .ipa YOK.
 # .ipa artifact olarak yüklenmez (açık depoda herkes indirebilirdi) → doğrudan App Store Connect'e gider.
-# Başlat: gh workflow run ios.yml -R kaankapucuoglu/ios-builder -f app=mahalle-abisi
+# Başlat: gh workflow run ios.yml -R kaankapucuoglu/ios-builder -f app=mahalle-abisi   (ref boş → uygulamanın varsayılan dalı)
 # 31.10.2026: Demir Tabur (yaratik-savasi) Apple dağıtımından çıkarıldı (4.3 ret) → seçenek, DEPLOY_KEY_YS ve PROFILE_YS kaldırıldı.
+# 01.11.2026: lifefit (depo diyet-uygulamasi, dal main, AÇIK depo → deploy key yok) ve puzzlebee (depo jigsaw) eklendi.
 # Gizli anahtarlar: EXPO_TOKEN, IOS_P12_BASE64, IOS_P12_PASSWORD, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_BASE64,
-#   DEPLOY_KEY_MA / DEPLOY_KEY_SL / DEPLOY_KEY_PO / DEPLOY_KEY_SB (ssh özel anahtar), PROFILE_MA / PROFILE_SL / PROFILE_PO / PROFILE_SB (mobileprovision base64)
+#   DEPLOY_KEY_MA / DEPLOY_KEY_SL / DEPLOY_KEY_PO / DEPLOY_KEY_SB / DEPLOY_KEY_PB (ssh özel anahtar),
+#   PROFILE_MA / PROFILE_SL / PROFILE_PO / PROFILE_SB / PROFILE_PB / PROFILE_LF (mobileprovision base64)
 name: iOS
 
 on:
   workflow_dispatch:
     inputs:
       app:
-        description: "Oyun"
+        description: "Uygulama"
         type: choice
-        options: [mahalle-abisi, sliplines, parkout, slipblocks]
+        options: [mahalle-abisi, sliplines, parkout, slipblocks, puzzlebee, lifefit]
         default: mahalle-abisi
       ref:
-        description: "Dal / commit"
+        description: "Dal / commit (boş = uygulamanın varsayılan dalı)"
         type: string
-        default: master
+        default: ""
       upload:
         description: "App Store Connect'e yükle"
         type: boolean
@@ -42,20 +44,24 @@ jobs:
     steps:
       - name: Anahtar seç
         id: k
+        # s: secret eki (PROFILE_<s>, DEPLOY_KEY_<s>) · repo: kaankapucuoglu/<repo> · ref: varsayılan dal
         run: |
           case "${{ inputs.app }}" in
-            mahalle-abisi) echo "s=MA" >> $GITHUB_OUTPUT ;;
-            sliplines) echo "s=SL" >> $GITHUB_OUTPUT ;;
-            parkout) echo "s=PO" >> $GITHUB_OUTPUT ;;
-            slipblocks) echo "s=SB" >> $GITHUB_OUTPUT ;;
-            *) echo "Bu oyun iOS derlemesine kapalı: ${{ inputs.app }}"; exit 1 ;;
+            mahalle-abisi) echo "s=MA" >> $GITHUB_OUTPUT; echo "repo=mahalle-abisi" >> $GITHUB_OUTPUT; echo "ref=master" >> $GITHUB_OUTPUT ;;
+            sliplines)     echo "s=SL" >> $GITHUB_OUTPUT; echo "repo=sliplines" >> $GITHUB_OUTPUT;     echo "ref=master" >> $GITHUB_OUTPUT ;;
+            parkout)       echo "s=PO" >> $GITHUB_OUTPUT; echo "repo=parkout" >> $GITHUB_OUTPUT;       echo "ref=master" >> $GITHUB_OUTPUT ;;
+            slipblocks)    echo "s=SB" >> $GITHUB_OUTPUT; echo "repo=slipblocks" >> $GITHUB_OUTPUT;    echo "ref=master" >> $GITHUB_OUTPUT ;;
+            puzzlebee)     echo "s=PB" >> $GITHUB_OUTPUT; echo "repo=jigsaw" >> $GITHUB_OUTPUT;        echo "ref=master" >> $GITHUB_OUTPUT ;;
+            lifefit)       echo "s=LF" >> $GITHUB_OUTPUT; echo "repo=diyet-uygulamasi" >> $GITHUB_OUTPUT; echo "ref=main" >> $GITHUB_OUTPUT ;;
+            *) echo "Bu uygulama iOS derlemesine kapalı: ${{ inputs.app }}"; exit 1 ;;
           esac
 
       - uses: actions/checkout@v5
         with:
-          repository: kaankapucuoglu/${{ inputs.app }}
-          ref: ${{ inputs.ref }}
-          ssh-key: ${{ steps.k.outputs.s == 'MA' && secrets.DEPLOY_KEY_MA || (steps.k.outputs.s == 'SL' && secrets.DEPLOY_KEY_SL || (steps.k.outputs.s == 'PO' && secrets.DEPLOY_KEY_PO || (steps.k.outputs.s == 'SB' && secrets.DEPLOY_KEY_SB || ''))) }}
+          repository: kaankapucuoglu/${{ steps.k.outputs.repo }}
+          ref: ${{ inputs.ref || steps.k.outputs.ref }}
+          # gizli depolar: deploy key; lifefit (açık depo) için boş → varsayılan GITHUB_TOKEN ile okunur
+          ssh-key: ${{ steps.k.outputs.s == 'MA' && secrets.DEPLOY_KEY_MA || (steps.k.outputs.s == 'SL' && secrets.DEPLOY_KEY_SL || (steps.k.outputs.s == 'PO' && secrets.DEPLOY_KEY_PO || (steps.k.outputs.s == 'SB' && secrets.DEPLOY_KEY_SB || (steps.k.outputs.s == 'PB' && secrets.DEPLOY_KEY_PB || '')))) }}
           path: app
           persist-credentials: false
 
@@ -81,8 +87,9 @@ jobs:
         env:
           P12: ${{ secrets.IOS_P12_BASE64 }}
           P12_PASS: ${{ secrets.IOS_P12_PASSWORD }}
-          PROF: ${{ steps.k.outputs.s == 'MA' && secrets.PROFILE_MA || (steps.k.outputs.s == 'SL' && secrets.PROFILE_SL || (steps.k.outputs.s == 'PO' && secrets.PROFILE_PO || (steps.k.outputs.s == 'SB' && secrets.PROFILE_SB || ''))) }}
+          PROF: ${{ steps.k.outputs.s == 'MA' && secrets.PROFILE_MA || (steps.k.outputs.s == 'SL' && secrets.PROFILE_SL || (steps.k.outputs.s == 'PO' && secrets.PROFILE_PO || (steps.k.outputs.s == 'SB' && secrets.PROFILE_SB || (steps.k.outputs.s == 'PB' && secrets.PROFILE_PB || (steps.k.outputs.s == 'LF' && secrets.PROFILE_LF || ''))))) }}
         run: |
+          [ -n "$PROF" ] || { echo "PROFILE_${{ steps.k.outputs.s }} secret'ı boş — mobileprovision base64 ekleyin"; exit 1; }
           mkdir -p ci-creds
           echo "$P12" | base64 --decode > ci-creds/dist.p12
           echo "$PROF" | base64 --decode > ci-creds/profile.mobileprovision
